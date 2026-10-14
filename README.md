@@ -51,9 +51,10 @@ jobs:
 Draft PRs are skipped, so mark the PR ready before requesting a review.
 
 Each run sets a one-line "Claude review" status in the PR's checks list:
-reviewing, reviewed, failed, or skipped with the reason (a draft PR, or a
-PR that changes the review workflow, which the Claude app only runs once
-it matches the default branch).
+reviewing, reviewed, failed (including a run that ended without posting its
+summary), or skipped with the reason (a draft PR, or a PR that changes the
+review workflow, which the Claude app only runs once it matches the default
+branch).
 
 ### Options
 
