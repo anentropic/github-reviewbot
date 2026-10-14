@@ -183,6 +183,21 @@ jobs:
              passes failed or tool calls were denied; then say so in the summary.
           REVIEW_PR_EOF
 
+      # pass the command's text as the prompt: a "/review-pr" prompt relies on
+      # Claude Code loading .claude/commands, and in CI it didn't, so the run
+      # fell back to the built-in /code-review and never posted
+      - name: Build the review prompt
+        id: prompt
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          {
+            echo "prompt<<REVIEW_PROMPT_EOF"
+            awk 'NR == 1 && /^---$/ { f = 1; next } f && /^---$/ { f = 0; next } !f' \
+              .claude/commands/review-pr.md | sed "s#\$ARGUMENTS#$PR_URL#g"
+            echo "REVIEW_PROMPT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
         id: claude
         if: ${{ !github.event.pull_request.draft }}
@@ -193,7 +208,7 @@ jobs:
           # subagents otherwise run in the background, and the run ends (killing
           # them) as soon as the main agent's turn does, before anything is posted
           settings: '{"env": {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}}'
-          prompt: "/review-pr ${{ github.event.pull_request.html_url }}"
+          prompt: ${{ steps.prompt.outputs.prompt }}
           claude_args: >-
             --model ${{ inputs.model }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Read,Write,Grep,Glob,Task,Agent"
