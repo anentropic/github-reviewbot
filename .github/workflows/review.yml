@@ -1,0 +1,181 @@
+name: Claude Code Review (reusable)
+
+# Called from a small per-repo workflow (see README.md).
+# Uses the repo's own .claude/commands/review-pr.md when it has one, otherwise
+# writes the generic command below.
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        type: string
+        default: opus
+      reviewer:
+        description: Login of the account people request a review from
+        type: string
+        default: anentropic-reviewbot
+      label:
+        description: Label that asks for a review
+        type: string
+        default: claude-review
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Add the generic review command if the repo has none
+        if: hashFiles('.claude/commands/review-pr.md') == ''
+        run: |
+          mkdir -p .claude/commands
+          cat > .claude/commands/review-pr.md <<'REVIEW_PR_EOF'
+          ---
+          allowed-tools: Bash(gh pr comment:*), Bash(gh pr diff:*), Bash(gh pr view:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git rev-parse:*), Read, Write, Grep, Glob, Task, Agent, mcp__github_inline_comment__create_inline_comment
+          description: Review a pull request and post the findings as PR comments
+          ---
+
+          Review pull request $ARGUMENTS and post the results on GitHub.
+
+          **Agent assumptions (apply to every agent and subagent):**
+          - All tools work. Do not test tools or make exploratory calls.
+          - Only call a tool when the task needs it.
+          - Run each shell command on its own: no pipes, `&&`, redirects, heredocs
+            or `$(...)`, which the permission rules reject. Get the head commit SHA
+            from `gh pr view $ARGUMENTS --json headRefOid`.
+          - Never put comment text on the command line: backticks or `$` inside
+            `--body "..."` count as command substitution and the command is denied.
+            Write the text to `review-comment.md` with the Write tool, then run
+            `gh pr comment $ARGUMENTS --body-file review-comment.md`.
+
+          Follow these steps:
+
+          1. Run `gh pr view $ARGUMENTS`. If the PR is closed or a draft, stop without
+             commenting. Otherwise always review it, whoever or whatever wrote it.
+
+          2. Read whichever of AGENTS.md, CLAUDE.md and REVIEW.md exist at the repo
+             root, plus any of them in a directory containing a changed file.
+
+          3. Read the PR title, description and the full `gh pr diff`, and summarise
+             the change and its intent for yourself.
+
+          4. Review the change in the four passes below. Launch each pass as a
+             subagent in parallel if you can; if subagents are not available, do every
+             pass yourself, one after another. Run subagents in the foreground and
+             wait for every pass to return before going on. Do not skip a pass. Give each pass the
+             PR title, description and your summary. Each pass returns a list of
+             issues with the file, line, a description and why it was flagged.
+
+             Pass 1, bugs in the diff: read every changed line. Look for wrong logic,
+             off-by-one errors, wrong conditions, unhandled None or empty values,
+             exceptions that are not caught, and code that does not do what the PR
+             description says.
+
+             Pass 2, edge cases and inputs: for every new view, form, command and
+             model field, trace realistic inputs through to the database and back.
+             Look for user input longer than a field's `max_length`, missing
+             validation, unique constraint clashes, time zone and date handling,
+             duplicate submissions, missing permission checks, and pages that run a
+             query per row.
+
+             Pass 3, project checks:
+             - any review rules or project checks listed in AGENTS.md, CLAUDE.md or
+               REVIEW.md
+             - database schema changes with no matching migration, or a migration
+               that will fail or lose data on an existing database
+             - code or templates that will raise for data the change makes possible
+               (for example a field that is now nullable but is still dereferenced)
+             - secrets, credentials or unsafe GitHub Actions configuration in the diff
+
+             Pass 4, callers and conventions: read the surrounding code that calls or
+             is called by the changed code. Look for broken callers, duplicated logic
+             that already exists elsewhere in the repo, missing tests for new
+             behaviour, and clear breaks of an AGENTS.md, CLAUDE.md or REVIEW.md
+             rule you can quote.
+
+             Do NOT flag:
+             - pre-existing issues in lines the PR does not touch
+             - anything the repo's linters or formatters would catch
+             - pure style preferences
+             - issues explicitly silenced in the code, such as a lint or type-checker ignore comment
+
+          5. Check each issue against the code before posting: read the lines
+             involved and trace one concrete input or call that makes it go wrong.
+             Drop issues you cannot back with a concrete path. Sort the rest:
+             - **Issue**: you traced a realistic path to a wrong result, crash,
+               data loss or security hole.
+             - **Worth a look**: a plausible problem, a missing test, or a fragile
+               spot that is not clearly wrong.
+
+          6. Post the results:
+             - For each issue and each worth-a-look item, post one inline comment with
+               `mcp__github_inline_comment__create_inline_comment` and `confirmed: true`.
+               Start worth-a-look comments with "(optional)". Say what goes wrong and
+               the input or path that triggers it. Include a committable suggestion
+               block only when committing it fully fixes the issue and the fix is
+               under 6 lines. Post one comment per unique issue.
+             - Then always post a short summary, written to `review-comment.md` and
+               posted with `gh pr comment $ARGUMENTS --body-file review-comment.md`.
+               The inline comments carry the detail, so the summary does not repeat
+               file paths, line links or explanations for them. Use this format:
+
+               ### <verdict>
+
+               **<one sentence on the overall state of the PR and the main risk, if any>**
+
+               **<N> findings**
+               - <short title of each issue, a few words>
+               - (optional) <short title of each worth-a-look item>
+
+               **What changed:** <one sentence on what the PR does>
+               - <two to five short bullets on the main changes>
+
+               <sub>Passes run: <which of the four passes ran, and whether as subagents></sub>
+
+               The verdict is "🔴 Issues found" when there is at least one issue,
+               "🟡 Worth a look" when there are only worth-a-look items, and
+               "🟢 No issues found" otherwise; leave out the findings list then.
+               A finding you could not post inline is the one exception: give its
+               file and line in its bullet, with a permalink.
+
+             When linking to code, use a full-SHA permalink with at least one line of
+             context either side, like
+             `https://github.com/OWNER/REPO/blob/<full sha>/path/file.py#L4-L7`.
+             Do not put the review in your final message; only post it on GitHub.
+          REVIEW_PR_EOF
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          # from `claude setup-token`: uses a Claude subscription, not API billing
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          display_report: true
+          # subagents otherwise run in the background, and the run ends (killing
+          # them) as soon as the main agent's turn does, before anything is posted
+          settings: '{"env": {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}}'
+          prompt: "/review-pr ${{ github.event.pull_request.html_url }}"
+          claude_args: >-
+            --model ${{ inputs.model }}
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Read,Write,Grep,Glob,Task,Agent"
+
+      # clear the request or label so asking again starts a fresh review
+      - name: Clear the review request
+        if: always() && github.event.action == 'review_requested' && inputs.reviewer != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/requested_reviewers" -f "reviewers[]=${{ inputs.reviewer }}"
+
+      - name: Remove the review label
+        if: always() && github.event.action == 'labeled'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/${{ inputs.label }}"
