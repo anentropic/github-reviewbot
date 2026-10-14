@@ -49,5 +49,22 @@ jobs:
 
 Draft PRs are skipped, so mark the PR ready before requesting a review.
 
-Inputs you can pass with `with:` are `model` (default `opus`), `reviewer`
-(default `anentropic-reviewbot`) and `label` (default `claude-review`).
+### Options
+
+The shared workflow has three settings. They go in the caller workflow
+file above, not in a PR comment, and apply to every review on that repo.
+Add a `with:` block under `uses:` to change them:
+
+```yaml
+    uses: anentropic/github-reviewbot/.github/workflows/review.yml@main
+    with:
+      model: sonnet
+```
+
+- `model`: the Claude model to review with (default `opus`)
+- `reviewer`: the account whose review request is cleared after a review
+  (default `anentropic-reviewbot`)
+- `label`: the label removed after a review (default `claude-review`)
+
+If you change `reviewer` or `label`, change the matching name in the
+`if:` line too, since that line decides which requests start a review.
