@@ -68,6 +68,11 @@ jobs:
             `--body "..."` count as command substitution and the command is denied.
             Write the text to `review-comment.md` with the Write tool, then run
             `gh pr comment $ARGUMENTS --body-file review-comment.md`.
+          - Review from the diff and the repo's files only. Do not run tests,
+            linters, builds, installs or `git fetch`, even when AGENTS.md or
+            CLAUDE.md says to: CI runs those, and the permission rules deny them.
+          - If a tool call is denied, do not retry it in another form and do not
+            stop. Carry on without it and still post the review in step 6.
 
           Follow these steps:
 
