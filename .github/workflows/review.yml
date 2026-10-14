@@ -205,9 +205,11 @@ jobs:
           gh api "$STATUS_URL" -f context="Claude review" -f target_url="$RUN_URL" \
             -f state="$state" -f description="$description"
 
-      # clear the request or label so asking again starts a fresh review
+      # clear the request or label so asking again starts a fresh review. Any
+      # run clears a pending request, so a review started by a push doesn't
+      # leave "Awaiting requested review" showing
       - name: Clear the review request
-        if: always() && github.event.action == 'review_requested' && inputs.reviewer != ''
+        if: always() && inputs.reviewer != '' && contains(github.event.pull_request.requested_reviewers.*.login, inputs.reviewer)
         run: gh api -X DELETE "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/requested_reviewers" -f "reviewers[]=${{ inputs.reviewer }}"
 
       - name: Remove the review label
