@@ -236,7 +236,7 @@ jobs:
           if [ "$DRAFT" = "true" ]; then
             state=success; description="Skipped: draft PR. Mark it ready, then ask again"
           elif [ "$CONCLUSION" = "success" ] && [ "$POSTED" = "0" ]; then
-            state=failure; description="Finished without posting a review, see the run log"
+            state=failure; description="Finished without posting the summary comment, see the run log"
           elif [ "$CONCLUSION" = "success" ]; then
             state=success; description="Reviewed"
           elif [ "$OUTCOME" = "failure" ] || [ "$CONCLUSION" = "failure" ]; then
