@@ -138,15 +138,18 @@ jobs:
                - (optional) <short title of each worth-a-look item>
 
                **What changed:** <one sentence on what the PR does>
-               - <two to five short bullets on the main changes>
+               - <up to five short bullets on the main changes, if the sentence is not enough>
 
                <sub>Passes run: <which of the four passes ran, and whether as subagents></sub>
 
-               The verdict is "🔴 Issues found" when there is at least one issue,
-               "🟡 Worth a look" when there are only worth-a-look items, and
-               "🟢 No issues found" otherwise; leave out the findings list then.
+               The count covers issues and worth-a-look items together, as "1 finding"
+               or "<N> findings". The verdict is "🔴 Issues found" when there is at
+               least one issue, "🟡 Worth a look" when there are only worth-a-look
+               items, and "🟢 No issues found" otherwise. With 🟢, leave out the
+               findings count and list entirely.
                A finding you could not post inline is the one exception: give its
-               file and line in its bullet, with a permalink.
+               file and line in its bullet, with a permalink, plus one sentence on
+               what goes wrong and what triggers it.
 
              When linking to code, use a full-SHA permalink with at least one line of
              context either side, like
