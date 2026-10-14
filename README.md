@@ -42,12 +42,18 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      statuses: write
     uses: anentropic/github-reviewbot/.github/workflows/review.yml@main
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 ```
 
 Draft PRs are skipped, so mark the PR ready before requesting a review.
+
+Each run sets a one-line "Claude review" status in the PR's checks list:
+reviewing, reviewed, failed, or skipped with the reason (a draft PR, or a
+PR that changes the review workflow, which the Claude app only runs once
+it matches the default branch).
 
 ### Options
 

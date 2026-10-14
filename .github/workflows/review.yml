@@ -30,7 +30,18 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      STATUS_URL: repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      # a one-line "Claude review" status in the PR's checks list says what happened
+      - name: Mark the review as started
+        run: >-
+          gh api "$STATUS_URL" -f context="Claude review" -f target_url="$RUN_URL"
+          -f state=pending -f description="Reviewing"
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 1
@@ -158,6 +169,8 @@ jobs:
           REVIEW_PR_EOF
 
       - uses: anthropics/claude-code-action@v1
+        id: claude
+        if: ${{ !github.event.pull_request.draft }}
         with:
           # from `claude setup-token`: uses a Claude subscription, not API billing
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -170,15 +183,33 @@ jobs:
             --model ${{ inputs.model }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Read,Write,Grep,Glob,Task,Agent"
 
+      - name: Report what happened
+        if: always()
+        env:
+          DRAFT: ${{ github.event.pull_request.draft }}
+          OUTCOME: ${{ steps.claude.outcome }}
+          CONCLUSION: ${{ steps.claude.outputs.conclusion }}
+        run: |
+          if [ "$DRAFT" = "true" ]; then
+            state=success; description="Skipped: draft PR. Mark it ready, then ask again"
+          elif [ "$CONCLUSION" = "success" ]; then
+            state=success; description="Reviewed"
+          elif [ "$OUTCOME" = "failure" ] || [ "$CONCLUSION" = "failure" ]; then
+            state=failure; description="Review failed, see the run log"
+          elif [ "$OUTCOME" = "success" ]; then
+            # the Claude app skips when the caller's workflow file differs from the default branch
+            state=success; description="Skipped: this PR changes the review workflow. It will review after merge"
+          else
+            state=error; description="Review did not run, see the run log"
+          fi
+          gh api "$STATUS_URL" -f context="Claude review" -f target_url="$RUN_URL" \
+            -f state="$state" -f description="$description"
+
       # clear the request or label so asking again starts a fresh review
       - name: Clear the review request
         if: always() && github.event.action == 'review_requested' && inputs.reviewer != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: gh api -X DELETE "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/requested_reviewers" -f "reviewers[]=${{ inputs.reviewer }}"
 
       - name: Remove the review label
         if: always() && github.event.action == 'labeled'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: gh api -X DELETE "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/${{ inputs.label }}"
