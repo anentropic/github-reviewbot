@@ -6,7 +6,9 @@ Request a review from `anentropic-reviewbot` on a PR (or add the
 `claude-review` label) and Claude reviews it, posting a single review: a
 short summary plus inline comments on the problems it finds. As one review it
 sends one notification, not one per comment. When it's done the request or
-label is cleared, so asking again runs a fresh review.
+label is cleared, so asking again runs a fresh review. Only one review runs
+per PR at a time: asking again while one is running (or requesting a review
+and adding the label together) cancels the older run.
 
 GitHub doesn't let a GitHub App be requested as a reviewer, so the request
 goes to the `anentropic-reviewbot` account. The review itself is posted by

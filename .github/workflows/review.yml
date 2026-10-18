@@ -25,6 +25,12 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # one review per PR at a time: a request and a label added together, or a
+    # second request before the first review finishes, would otherwise each
+    # run a full review of the same commit. The newer run wins
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -279,8 +285,11 @@ jobs:
           OUTCOME: ${{ steps.claude.outcome }}
           CONCLUSION: ${{ steps.claude.outputs.conclusion }}
           POSTED: ${{ steps.posted.outputs.count }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          if [ "$DRAFT" = "true" ]; then
+          if [ "$JOB_STATUS" = "cancelled" ]; then
+            state=error; description="Cancelled, usually by a newer review request"
+          elif [ "$DRAFT" = "true" ]; then
             state=success; description="Skipped: draft PR. Mark it ready, then ask again"
           elif [ "$CONCLUSION" = "success" ] && [ "$POSTED" = "0" ]; then
             state=failure; description="Finished without posting the summary comment, see the run log"
