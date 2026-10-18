@@ -96,7 +96,7 @@ jobs:
           3. Read the PR title, description and the full `gh pr diff`, and summarise
              the change and its intent for yourself.
 
-          4. Review the change in the four passes below. Launch each pass as a
+          4. Review the change in the three passes below. Launch each pass as a
              subagent in parallel if you can; if subagents are not available, do every
              pass yourself, one after another. Run subagents in the foreground and
              wait for every pass to return before going on. Do not skip a pass. Give each pass the
@@ -105,19 +105,16 @@ jobs:
              returns a list of issues with the file, line, a description and why
              it was flagged.
 
-             Pass 1, bugs in the diff: read every changed line. Look for wrong logic,
+             Pass 1, bugs and inputs: read every changed line. Look for wrong logic,
              off-by-one errors, wrong conditions, unhandled None or empty values,
              exceptions that are not caught, and code that does not do what the PR
-             description says.
+             description says. Then trace realistic inputs through each new entry
+             point (a function, endpoint, command, parser or data field) to where
+             they are stored or returned. Look for missing validation, size and
+             length limits, duplicates and uniqueness clashes, time zone and date
+             handling, missing permission checks, and work repeated per row or item.
 
-             Pass 2, edge cases and inputs: for every new view, form, command and
-             model field, trace realistic inputs through to the database and back.
-             Look for user input longer than a field's `max_length`, missing
-             validation, unique constraint clashes, time zone and date handling,
-             duplicate submissions, missing permission checks, and pages that run a
-             query per row.
-
-             Pass 3, project checks:
+             Pass 2, project checks:
              - any review rules or project checks listed in AGENTS.md, CLAUDE.md or
                REVIEW.md
              - database schema changes with no matching migration, or a migration
@@ -126,7 +123,7 @@ jobs:
                (for example a field that is now nullable but is still dereferenced)
              - secrets, credentials or unsafe GitHub Actions configuration in the diff
 
-             Pass 4, callers and conventions: read the surrounding code that calls or
+             Pass 3, callers and conventions: read the surrounding code that calls or
              is called by the changed code. Look for broken callers, duplicated logic
              that already exists elsewhere in the repo, missing tests for new
              behaviour, and clear breaks of an AGENTS.md, CLAUDE.md or REVIEW.md
@@ -194,7 +191,7 @@ jobs:
                **What changed:** <one sentence on what the PR does>
                - <up to five short bullets on the main changes, if the sentence is not enough>
 
-               <sub>Passes run: <which of the four passes ran, and whether as subagents></sub>
+               <sub>Passes run: <which of the three passes ran, and whether as subagents></sub>
 
                The count covers issues and worth-a-look items together, as "1 finding"
                or "<N> findings". The verdict is "🔴 Issues found" when there is at
@@ -213,6 +210,50 @@ jobs:
              or tool calls were denied; then say so in the summary.
           REVIEW_PR_EOF
 
+      # a re-review looks at what changed since the bot's last review, not the
+      # whole PR again. With no earlier review, a request on the commit already
+      # reviewed, or an earlier commit that can't be fetched, it is a full review
+      - name: Collect the changes since the last review
+        id: since
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEWS_API: repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews
+        run: |
+          last=$(gh api "$REVIEWS_API?per_page=100" --paginate \
+            --jq '.[] | select(.user.login == "claude[bot]" and .body != "") | "\(.id) \(.commit_id)"' | tail -n 1)
+          review_id=${last%% *}
+          last_sha=${last##* }
+          if [ -z "$last" ] || [ "$last_sha" = "$HEAD_SHA" ]; then
+            echo "Full review: no earlier review of another commit"
+            exit 0
+          fi
+          if ! git fetch --quiet --depth=1 origin "$last_sha"; then
+            echo "Full review: the last reviewed commit $last_sha can't be fetched"
+            exit 0
+          fi
+          mkdir -p .review
+          gh pr diff "$PR" --name-only > .review/files.txt
+          readarray -t files < .review/files.txt
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "Full review: no changed files listed"
+            exit 0
+          fi
+          # a diff of the two trees, limited to the PR's files, so it also works
+          # after a rebase and leaves out changes merged in from the base branch
+          git diff "$last_sha" "$HEAD_SHA" -- "${files[@]}" > .review/changes-since-last-review.diff
+          {
+            echo "# The last review, at $last_sha"
+            echo
+            gh api "$REVIEWS_API/$review_id" --jq .body
+            echo
+            echo "## Its inline comments"
+            gh api "$REVIEWS_API/$review_id/comments?per_page=100" --paginate \
+              --jq '.[] | "\n### \(.path) line \(.line // .original_line)\n\(.body)"'
+          } > .review/last-review.md
+          echo "Re-review since $last_sha: $(wc -l < .review/changes-since-last-review.diff) diff lines"
+          echo "last_sha=$last_sha" >> "$GITHUB_OUTPUT"
+
       # pass the command's text as the prompt: a "/review-pr" prompt relies on
       # Claude Code loading .claude/commands, and in CI it didn't, so the run
       # fell back to the built-in /code-review and never posted
@@ -221,11 +262,34 @@ jobs:
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           REVIEWS_API: repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews
+          LAST_SHA: ${{ steps.since.outputs.last_sha }}
         run: |
           {
             echo "prompt<<REVIEW_PROMPT_EOF"
             awk 'NR == 1 && /^---$/ { f = 1; next } f && /^---$/ { f = 0; next } !f' \
               .claude/commands/review-pr.md | sed -e "s#\$ARGUMENTS#$PR_URL#g" -e "s#\$REVIEWS_API#$REVIEWS_API#g"
+            if [ -n "$LAST_SHA" ]; then
+              sed "s#\$LAST_SHA#$LAST_SHA#g" <<'RE_REVIEW_EOF'
+
+          **This is a re-review.** This PR was reviewed before, at commit $LAST_SHA.
+          Review what changed since then, not the whole PR again:
+          - `.review/changes-since-last-review.diff` holds the changes to the PR's
+            files since that review. Run the passes on those changes only. Still
+            read the full `gh pr diff`, since inline comments must sit on lines it
+            contains, and read the surrounding code where a pass needs it. Lines
+            unchanged since the last review are out of scope.
+          - `.review/last-review.md` holds that review's summary and inline
+            comments. Check whether the new changes fix each of its findings. Do
+            not post an earlier finding again as an inline comment.
+          - If the changes are small (about 200 changed lines or fewer), do the
+            passes yourself rather than launching subagents.
+          - In the summary, add a line after the bold sentence:
+            `**Since the last review:** <N> of <M> earlier findings fixed`, then a
+            bullet with the short title of each earlier finding still open.
+          - In the `Passes run` line, say this was a re-review of the changes
+            since the last review.
+          RE_REVIEW_EOF
+            fi
             echo "REVIEW_PROMPT_EOF"
           } >> "$GITHUB_OUTPUT"
 
