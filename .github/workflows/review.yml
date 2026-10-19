@@ -228,8 +228,9 @@ jobs:
             echo "Full review: no earlier review of another commit"
             exit 0
           fi
-          if ! git fetch --quiet --depth=1 origin "$last_sha"; then
-            echo "Full review: the last reviewed commit $last_sha can't be fetched"
+          # the checkout is the PR's merge commit, so fetch the head commit too
+          if ! git fetch --quiet --depth=1 origin "$last_sha" "$HEAD_SHA"; then
+            echo "Full review: can't fetch the last reviewed commit $last_sha or the head $HEAD_SHA"
             exit 0
           fi
           mkdir -p .review
@@ -241,7 +242,11 @@ jobs:
           fi
           # a diff of the two trees, limited to the PR's files, so it also works
           # after a rebase and leaves out changes merged in from the base branch
-          git diff "$last_sha" "$HEAD_SHA" -- "${files[@]}" > .review/changes-since-last-review.diff
+          if ! git diff "$last_sha" "$HEAD_SHA" -- "${files[@]}" > .review/changes-since-last-review.diff; then
+            echo "Full review: can't diff $last_sha against $HEAD_SHA"
+            rm -rf .review
+            exit 0
+          fi
           {
             echo "# The last review, at $last_sha"
             echo
