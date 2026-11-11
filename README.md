@@ -31,7 +31,8 @@ REVIEW.md for the project's own rules.
 your machine, plus the bot app secrets and the `claude-review` label:
 
 ```sh
-scripts/new-repo-setup.sh anentropic/some-repo
+ln -s "$PWD/scripts/new-repo-setup.sh" ~/.local/bin/new-repo-setup  # once
+new-repo-setup anentropic/some-repo
 ```
 
 It reads the keys from the macOS keychain; the one-time setup is in the
