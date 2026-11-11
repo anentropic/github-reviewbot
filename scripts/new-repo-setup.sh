@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Set up a new repo like the others: reviewbot + bot GitHub App.
 #
-# Usage:   scripts/new-repo-setup.sh owner/repo [owner/repo ...]
+# Usage:   new-repo-setup owner/repo [owner/repo ...]
+#          (symlinked once: ln -s "$PWD/scripts/new-repo-setup.sh" ~/.local/bin/new-repo-setup)
 # Needs:   gh signed in as anentropic; macOS keychain entries (see "One-time setup").
 #
 # What it does per repo:
