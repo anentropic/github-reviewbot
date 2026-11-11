@@ -5,11 +5,14 @@
 # Needs:   gh signed in as anentropic; macOS keychain entries (see "One-time setup").
 #
 # What it does per repo:
-#   - adds the repo to the Claude GitHub App and the bot app (ID 5321164) installations
 #   - sets BOT_APP_ID and BOT_APP_PRIVATE_KEY as Actions AND Dependabot secrets
 #   - creates the `claude-review` label
 #   - on anentropic/* repos only: invites anentropic-reviewbot (write) and sets
 #     CLAUDE_CODE_OAUTH_TOKEN (s-layer has the bot as a member and the token as an org secret)
+#
+# Not done here: adding the repo to the Claude GitHub App and the bot app (ID 5321164)
+# installations. GitHub only allows that API with a GitHub App user token, which gh
+# doesn't have, so the script prints the settings link at the end instead.
 #
 # In-repo files (claude-review.yml, dependabot-automerge.yml, weekly.yml, the AGENTS.md
 # "Opening pull requests" section) come from cookiecutter-python-uv-library or a PR.
@@ -38,22 +41,6 @@ for r in "$@"; do
   echo "== $r"
   owner=${r%%/*}
 
-  repo_id=$(gh api "repos/$r" --jq .id)
-  for sel in '.app_slug == "claude"' ".app_id == $APP_ID"; do
-    read -r inst_id selection < <(gh api user/installations --paginate \
-      --jq ".installations[] | select($sel and .account.login == \"$owner\")
-            | \"\\(.id) \\(.repository_selection)\"") || true
-    if [ -z "${inst_id:-}" ]; then
-      echo "  app ($sel) not installed on $owner; install it first"
-    elif [ "$selection" = all ]; then
-      echo "  app ($sel) already covers all $owner repos"
-    elif gh api -X PUT "user/installations/$inst_id/repositories/$repo_id" --silent; then
-      echo "  app ($sel) installed"
-    else
-      echo "  could not add app ($sel) via API; add it at https://github.com/settings/installations"
-    fi
-  done
-
   for store in actions dependabot; do
     gh secret set BOT_APP_ID --app "$store" --repo "$r" --body "$APP_ID"
     printf '%s\n' "$PEM" | gh secret set BOT_APP_PRIVATE_KEY --app "$store" --repo "$r"
@@ -71,3 +58,7 @@ for r in "$@"; do
     echo "  $BOT invited, CLAUDE_CODE_OAUTH_TOKEN set (accept the invite as $BOT)"
   fi
 done
+
+echo
+echo "Check both apps (Claude and the bot app) have access to: $*"
+echo "  https://github.com/settings/installations  (s-layer: https://github.com/organizations/s-layer/settings/installations)"
