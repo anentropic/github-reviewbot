@@ -27,6 +27,16 @@ REVIEW.md for the project's own rules.
 
 ## Adding it to a repo
 
+[`scripts/new-repo-setup.sh`](scripts/new-repo-setup.sh) does steps 1 to 3 from
+your machine, plus the bot app secrets and the `claude-review` label:
+
+```sh
+scripts/new-repo-setup.sh anentropic/some-repo
+```
+
+It reads the keys from the macOS keychain; the one-time setup is in the
+script's header. Step 4 comes from the cookiecutter template or a PR.
+
 1. Install the Claude GitHub App on the repo
    (https://github.com/apps/claude).
 2. Add a `CLAUDE_CODE_OAUTH_TOKEN` repo secret, from `claude setup-token`.
