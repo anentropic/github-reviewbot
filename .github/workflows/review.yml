@@ -50,7 +50,7 @@ jobs:
           gh api "$STATUS_URL" -f context="Claude review" -f target_url="$RUN_URL" \
             -f state=pending -f description="Reviewing"
 
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 1
 
