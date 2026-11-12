@@ -50,7 +50,7 @@ jobs:
           gh api "$STATUS_URL" -f context="Claude review" -f target_url="$RUN_URL" \
             -f state=pending -f description="Reviewing"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.1.0
         with:
           fetch-depth: 1
 
@@ -298,7 +298,7 @@ jobs:
             echo "REVIEW_PROMPT_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@v1.0.273
         id: claude
         if: ${{ !github.event.pull_request.draft }}
         with:
