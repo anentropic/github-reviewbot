@@ -6,7 +6,9 @@
 # Needs:   gh signed in as anentropic; macOS keychain entries (see "One-time setup").
 #
 # What it does per repo:
-#   - sets BOT_APP_ID and BOT_APP_PRIVATE_KEY as Actions AND Dependabot secrets
+#   - sets BOT_APP_ID and BOT_APP_PRIVATE_KEY as Actions AND Dependabot secrets,
+#     except on public s-layer/* repos: those get the s-layer org secrets. s-layer is on
+#     the free plan, so org secrets only reach public repos; private ones still need copies.
 #   - creates the `claude-review` label
 #   - on anentropic/* repos only: invites anentropic-reviewbot (write) and sets
 #     CLAUDE_CODE_OAUTH_TOKEN (s-layer has the bot as a member and the token as an org secret)
@@ -35,18 +37,23 @@ BOT=anentropic-reviewbot
 [ $# -ge 1 ] || { echo "usage: $0 owner/repo [owner/repo ...]" >&2; exit 1; }
 
 kc() { security find-generic-password -s "$1" -w; }
-PEM=$(kc bot-app-private-key | base64 -d)
+PEM=""
 TOKEN=""
 
 for r in "$@"; do
   echo "== $r"
   owner=${r%%/*}
 
-  for store in actions dependabot; do
-    gh secret set BOT_APP_ID --app "$store" --repo "$r" --body "$APP_ID"
-    printf '%s\n' "$PEM" | gh secret set BOT_APP_PRIVATE_KEY --app "$store" --repo "$r"
-  done
-  echo "  bot app secrets set (actions + dependabot)"
+  if [ "$owner" = s-layer ] && [ "$(gh repo view "$r" --json visibility --jq .visibility)" = PUBLIC ]; then
+    echo "  public s-layer repo: using org bot app secrets, none set on the repo"
+  else
+    [ -n "$PEM" ] || PEM=$(kc bot-app-private-key | base64 -d)
+    for store in actions dependabot; do
+      gh secret set BOT_APP_ID --app "$store" --repo "$r" --body "$APP_ID"
+      printf '%s\n' "$PEM" | gh secret set BOT_APP_PRIVATE_KEY --app "$store" --repo "$r"
+    done
+    echo "  bot app secrets set (actions + dependabot)"
+  fi
 
   gh label create claude-review --repo "$r" --color 7057ff \
     --description "Request a Claude review" --force >/dev/null
