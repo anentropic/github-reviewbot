@@ -79,7 +79,7 @@ branch).
 
 ### Options
 
-The shared workflow has three settings. They go in the caller workflow
+The shared workflow has four settings. They go in the caller workflow
 file above, not in a PR comment, and apply to every review on that repo.
 Add a `with:` block under `uses:` to change them:
 
@@ -93,6 +93,11 @@ Add a `with:` block under `uses:` to change them:
 - `reviewer`: the account whose review request is cleared after a review
   (default `anentropic-reviewbot`)
 - `label`: the label removed after a review (default `claude-review`)
+- `runner`: the runner label for the review job. By default private repos
+  use `ubuntu-slim` (1 vCPU, a third of the standard per-minute price, jobs
+  capped at 15 minutes) and public repos use `ubuntu-latest`, which is free
+  for them. Set `runner: ubuntu-latest` on a private repo whose reviews run
+  close to 15 minutes.
 
 If you change `reviewer` or `label`, change the matching name in the
 `if:` line too, since that line decides which requests start a review.

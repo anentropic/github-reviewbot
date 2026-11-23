@@ -18,13 +18,24 @@ on:
         description: Label that asks for a review
         type: string
         default: claude-review
+      runner:
+        description: >-
+          Runner label for the review job. Empty picks ubuntu-slim for private
+          repos and ubuntu-latest for public ones (see the note on the job).
+        type: string
+        default: ""
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
 
 jobs:
   review:
-    runs-on: ubuntu-latest
+    # The review spends its time waiting on the Claude API, not the CPU, so on
+    # private repos it runs on the 1-vCPU ubuntu-slim runner, which bills at a
+    # third of the standard rate. Single-CPU jobs are capped at 15 minutes;
+    # reviews have taken under 9 so far. Public repos keep ubuntu-latest, which
+    # is free for them and has no 15-minute cap.
+    runs-on: ${{ inputs.runner || (github.event.repository.private && 'ubuntu-slim' || 'ubuntu-latest') }}
     # one review per PR at a time: a request and a label added together, or a
     # second request before the first review finishes, would otherwise each
     # run a full review of the same commit. The newer run wins
