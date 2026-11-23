@@ -245,7 +245,14 @@ jobs:
             exit 0
           fi
           mkdir -p .review
-          gh pr diff "$PR" --name-only > .review/files.txt
+          # the files endpoint lists up to 3000 files, where `gh pr diff` refuses
+          # a PR of more than 300
+          if ! gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" --paginate \
+            --jq '.[].filename' > .review/files.txt; then
+            echo "Full review: can't list the PR's files"
+            rm -rf .review
+            exit 0
+          fi
           readarray -t files < .review/files.txt
           if [ "${#files[@]}" -eq 0 ]; then
             echo "Full review: no changed files listed"
